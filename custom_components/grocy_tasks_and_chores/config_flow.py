@@ -1,14 +1,17 @@
 """Config flow for Grocy Tasks and Chores integration."""
 from __future__ import annotations
 
+import aiohttp
 import logging
 from typing import Any
+from urllib.parse import urlparse
 
 from homeassistant.core import callback
 import voluptuous as vol
 from homeassistant import config_entries
 from homeassistant.const import CONF_API_KEY, CONF_URL
 from homeassistant.core import HomeAssistant
+from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from homeassistant.data_entry_flow import FlowResult
 from homeassistant.exceptions import HomeAssistantError
 from pygrocyapi import GrocyAPI
@@ -25,14 +28,44 @@ STEP_USER_DATA_SCHEMA = vol.Schema(
 )
 
 
+class CannotConnect(HomeAssistantError):
+    """Error to indicate we cannot connect."""
+
+class InvalidAuth(HomeAssistantError):
+    """Error to indicate there is invalid authentication."""
+
+class InvalidURL(HomeAssistantError):
+    """Error to indicate there is an invalid URL."""
+
+
 async def validate_input(hass: HomeAssistant, data: dict[str, Any]) -> dict[str, Any]:
     """Validate the user input allows us to connect."""
-    api = GrocyAPI(data[CONF_URL], data[CONF_API_KEY])
+    session = async_get_clientsession(hass)
+    
+    # Validate URL format
+    try:
+        url = urlparse(data[CONF_URL])
+        if not all([url.scheme, url.netloc]):
+            raise InvalidURL
+    except Exception as err:
+        _LOGGER.error("Invalid URL format: %s", err)
+        raise InvalidURL from err
 
     try:
-        await api.test_connection()
-    except Exception as err:
+        async with session.get(
+            f"{data[CONF_URL]}/api/system/info",
+            headers={"GROCY-API-KEY": data[CONF_API_KEY]},
+            timeout=10,
+        ) as response:
+            if response.status != 200:
+                raise CannotConnect
+            await response.json()
+    except aiohttp.ClientError as err:
+        _LOGGER.error("Connection error: %s", err)
         raise CannotConnect from err
+    except Exception as err:
+        _LOGGER.error("Unexpected error: %s", err)
+        raise InvalidAuth from err
 
     return {"title": "Grocy Tasks and Chores"}
 
@@ -52,8 +85,12 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             try:
                 info = await validate_input(self.hass, user_input)
                 return self.async_create_entry(title=info["title"], data=user_input)
+            except InvalidURL:
+                errors["base"] = "invalid_url"
             except CannotConnect:
                 errors["base"] = "cannot_connect"
+            except InvalidAuth:
+                errors["base"] = "invalid_auth"
             except Exception:  # pylint: disable=broad-except
                 _LOGGER.exception("Unexpected exception")
                 errors["base"] = "unknown"
@@ -98,7 +135,3 @@ class OptionsFlowHandler(config_entries.OptionsFlow):
                 }
             ),
         )
-
-
-class CannotConnect(HomeAssistantError):
-    """Error to indicate we cannot connect."""
