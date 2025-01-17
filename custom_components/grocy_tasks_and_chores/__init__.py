@@ -1,6 +1,7 @@
 """The Grocy Tasks and Chores integration."""
 from __future__ import annotations
 
+from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from typing import Any
 import logging
 from datetime import timedelta
@@ -32,10 +33,12 @@ async def async_setup(hass: HomeAssistant, config: dict) -> bool:
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Set up Grocy Tasks and Chores from a config entry."""
     hass.data.setdefault(DOMAIN, {})
+    session = async_get_clientsession(hass)
     
     api = GrocyAPI(
         entry.data[CONF_URL],
         entry.data[CONF_API_KEY],
+        session=session,
     )
     
     async def async_update_data() -> dict[str, Any]:

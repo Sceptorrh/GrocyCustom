@@ -2,7 +2,7 @@
   "domain": "grocy_tasks_and_chores",
   "name": "Grocy Tasks and Chores",
   "documentation": "https://github.com/yourusername/ha-grocy-tasks-and-chores",
-  "dependencies": [],
+  "dependencies": ["http"],
   "codeowners": ["@yourusername"],
   "requirements": ["pygrocyapi==0.1.0"],
   "config_flow": true,
